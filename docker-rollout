@@ -84,26 +84,25 @@ scale() {
 
 main() {
   # shellcheck disable=SC2086 # COMPOSE_FILES and ENV_FILES must be unquoted to allow multiple files
-  CONTAINERS_JSON=$($COMPOSE_COMMAND $COMPOSE_FILES $ENV_FILES ps -a --format json "$SERVICE")
+  ALL_CONTAINER_IDS=$($COMPOSE_COMMAND $COMPOSE_FILES $ENV_FILES ps -a --quiet "$SERVICE")
+  # shellcheck disable=SC2086 # COMPOSE_FILES and ENV_FILES must be unquoted to allow multiple files
+  RUNNING_CONTAINER_IDS=$($COMPOSE_COMMAND $COMPOSE_FILES $ENV_FILES ps --quiet "$SERVICE")
 
   # Run the original script when no containers exist
-  if [ -z "$($COMPOSE_COMMAND $COMPOSE_FILES $ENV_FILES ps --quiet "$SERVICE")" ] && [ "$CONTAINERS_JSON" = "[]" ]; then
+  if [ -z "$ALL_CONTAINER_IDS" ]; then
     echo "==> Service '$SERVICE' is not running. Starting the service."
+    # shellcheck disable=SC2086 # COMPOSE_FILES and ENV_FILES must be unquoted to allow multiple files
     $COMPOSE_COMMAND $COMPOSE_FILES $ENV_FILES up --detach --no-recreate "$SERVICE"
     exit 0
   fi
 
-  # Run with --no-recreate param conditionally based on container state
-  echo "$CONTAINERS_JSON" | \
-  jq -r '.[] | "\(.ID) \(.Service) \(.State)"' | \
-  while read -r id service state; do
-    echo "==> Service '$SERVICE' is not running. Starting the service. exit, $state"
-    if [ "$state" == "exited" ]; then
-      $COMPOSE_COMMAND $COMPOSE_FILES $ENV_FILES up --detach "$service"
-    fi
-    $COMPOSE_COMMAND $COMPOSE_FILES $ENV_FILES up --detach --no-recreate "$service"
+  # Containers exist but none are running (all exited) — recreate them
+  if [ -z "$RUNNING_CONTAINER_IDS" ]; then
+    echo "==> Service '$SERVICE' has only exited containers. Recreating."
+    # shellcheck disable=SC2086 # COMPOSE_FILES and ENV_FILES must be unquoted to allow multiple files
+    $COMPOSE_COMMAND $COMPOSE_FILES $ENV_FILES up --detach "$SERVICE"
     exit 0
-  done
+  fi
 
   # shellcheck disable=SC2086 # COMPOSE_FILES and ENV_FILES must be unquoted to allow multiple files
   OLD_CONTAINER_IDS_STRING=$($COMPOSE_COMMAND $COMPOSE_FILES $ENV_FILES ps --quiet "$SERVICE" | tr '\n' '|' | sed 's/|$//')
