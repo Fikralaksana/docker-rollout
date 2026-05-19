@@ -96,11 +96,22 @@ main() {
     exit 0
   fi
 
-  # Containers exist but none are running (all exited) — recreate them
-  if [ -z "$RUNNING_CONTAINER_IDS" ]; then
-    echo "==> Service '$SERVICE' has only exited containers. Recreating."
+  # Identify stopped replicas (present in ps -a but not in ps --quiet)
+  STOPPED_CONTAINER_IDS=""
+  for id in $ALL_CONTAINER_IDS; do
+    if ! echo "$RUNNING_CONTAINER_IDS" | grep -qx "$id"; then
+      STOPPED_CONTAINER_IDS="$STOPPED_CONTAINER_IDS $id"
+    fi
+  done
+
+  # Remove only the stopped replicas and let compose create fresh ones; running containers
+  # are preserved via --no-recreate so the zero-downtime contract isn't broken if config drifted.
+  if [ -n "$STOPPED_CONTAINER_IDS" ]; then
+    echo "==> Service '$SERVICE' has stopped containers:$STOPPED_CONTAINER_IDS. Replacing only those."
+    # shellcheck disable=SC2086 # DOCKER_ARGS and STOPPED_CONTAINER_IDS must be unquoted to allow multiple arguments
+    docker $DOCKER_ARGS rm $STOPPED_CONTAINER_IDS
     # shellcheck disable=SC2086 # COMPOSE_FILES and ENV_FILES must be unquoted to allow multiple files
-    $COMPOSE_COMMAND $COMPOSE_FILES $ENV_FILES up --detach "$SERVICE"
+    $COMPOSE_COMMAND $COMPOSE_FILES $ENV_FILES up --detach --no-recreate "$SERVICE"
     exit 0
   fi
 
